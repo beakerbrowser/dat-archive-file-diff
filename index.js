@@ -1,39 +1,30 @@
 const diff = require('diff')
 const {InvalidEncodingError, SourceTooLargeError} = require('beaker-error-constants')
-const {isFileNameBinary, isFileContentBinary} = require('./util')
+const {isFileNameBinary} = require('./util')
+
+const MAX_DIFF_SIZE = 1048576 // 1mb in bytes
 
 exports.diffLines = async function diffFile (leftArchive, leftPath, rightArchive, rightPath, opts) {
-  // check the filename to see if it's binary
-  assertPathNotBinary(leftPath)
-  assertPathNotBinary(rightPath)
-
   // make sure we can handle the buffers involved
-  assertUsable(leftArchive, leftPath)
-  assertUsable(rightArchive, rightPath)
+  await assertUsable(leftArchive, leftPath)
+  await assertUsable(rightArchive, rightPath)
 
   // read the file in both sources
   const [leftFile, rightFile] = await Promise.all([
-    leftArchive.readFile(filepath, 'utf8'),
-    rightArchive.readFile(filepath, 'utf8')
+    leftArchive.readFile(leftPath, 'utf8').catch(err => ''),
+    rightArchive.readFile(rightPath, 'utf8').catch(err => '')
   ])
 
   // return the diff
   return diff.diffLines(leftFile, rightFile, opts)
 }
 
-function assertPathNotBinary (filepath) {
+async function assertUsable (archive, filepath) {
   var isBinary = isFileNameBinary(filepath)
   if (isBinary === true) {
     throw new InvalidEncodingError(`Cannot diff a binary file: ${filepath}`)
   }
-}
-
-function assertUsable (archive, filepath) {
-  let st
-  st = await archive.stat(filepath)
-  if (isBinary !== false && st && st.isFile() && await isFileContentBinary(archive, filepath)) {
-    throw new InvalidEncodingError('Cannot diff a binary file')
-  }
+  let st = await archive.stat(filepath).catch(e => false)
   if (st && st.isFile() && st.size > MAX_DIFF_SIZE) {
     throw new SourceTooLargeError()
   }
